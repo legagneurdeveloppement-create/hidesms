@@ -4,7 +4,7 @@
 
 import Dexie, { type Table } from "dexie"
 import { AVATAR_COLOR_KEYS, isNotificationIcon } from "@/lib/messages"
-import type { ConversationDTO, MessageDTO, ContactDTO } from "@/lib/messages"
+import type { ConversationDTO, MessageDTO } from "@/lib/messages"
 
 // ── Dexie schema ──────────────────────────────────────────────────────────────
 
@@ -54,69 +54,24 @@ class HideSMSDB extends Dexie {
 
   constructor() {
     super("hidesms-private")
-    // Minimal, robust schema: only index fields that are guaranteed to be
-    // valid Dexie keys (string/number/Date, never null). Booleans and
-    // nullable Dates are filtered in JS via .toArray().filter().
     this.version(2).stores({
       contacts: "id",
       conversations: "id, contactId",
       messages: "id, conversationId",
       settings: "key",
     })
-    // v1 -> v2 upgrade: clear all data so the old (boolean-indexed) schema is
-    // fully replaced. User data is demo-only so this is safe.
-    this.version(2).upgrade(async (tx) => {
-      await Promise.all([
-        tx.table("contacts").clear(),
-        tx.table("conversations").clear(),
-        tx.table("messages").clear(),
-      ])
-    })
   }
 }
 
-// Singleton (lazily created on the client).
 let _db: HideSMSDB | null = null
-
-// One-time migration: if an older schema (v1 with boolean indexes) left the DB
-// in a state where v2 can't open it, wipe and recreate. This only runs once
-// (flagged in localStorage) so it doesn't nuke user data on every load.
-async function ensureFreshSchema() {
-  if (typeof window === "undefined") return
-  const flag = "hidesms_schema_v2_ok"
-  if (localStorage.getItem(flag)) return
-  try {
-    const dbNames = await indexedDB.databases?.().catch(() => []) ?? []
-    if (dbNames.some((d) => d.name === "hidesms-private")) {
-      // Try opening with the new schema; if it fails, delete & recreate.
-      try {
-        const test = new HideSMSDB()
-        await test.open()
-        await test.close()
-      } catch {
-        await indexedDB.deleteDatabase("hidesms-private")
-      }
-    }
-    localStorage.setItem(flag, "1")
-  } catch {
-    localStorage.setItem(flag, "1")
-  }
-}
 
 function db(): HideSMSDB {
   if (typeof window === "undefined") {
     throw new Error("local-db can only be used in the browser")
   }
-  if (!_db) {
-    _db = new HideSMSDB()
-    // Kick off the schema cleanup in the background; the first query may
-    // trigger it implicitly via Dexie's auto-open.
-    ensureFreshSchema().catch(() => {})
-  }
+  if (!_db) _db = new HideSMSDB()
   return _db
 }
-
-// ── ID helpers ────────────────────────────────────────────────────────────────
 
 export function uid(prefix = "id"): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
@@ -144,7 +99,7 @@ export async function getAllSettings(): Promise<Record<string, string>> {
   return map
 }
 
-// ── PIN hashing (client-side via crypto.subtle, works in WebView) ─────────────
+// ── PIN hashing ────────────────────────────────────────────────────────────────
 
 export async function hashPin(pin: string): Promise<string> {
   const enc = new TextEncoder().encode(`hidesms::${pin}`)
@@ -161,7 +116,7 @@ export async function verifyPin(pin: string, mode: "main" | "vault" = "main"): P
   return (await hashPin(pin)) === stored
 }
 
-// ── Contacts ─────────────────────────────────────────────────────────────────
+// ── Contacts ──────────────────────────────────────────────────────────────────
 
 export async function createContact(input: {
   name: string
@@ -191,7 +146,7 @@ export async function createContact(input: {
   return contact
 }
 
-// ── Conversations ─────────────────────────────────────────────────────────────
+// ── Conversations ──────────────────────────────────────────────────────────────
 
 export async function createConversation(input: {
   name?: string
@@ -240,8 +195,6 @@ export async function patchConversation(
   if (typeof patch.isArchived === "boolean") update.isArchived = patch.isArchived
   if (typeof patch.isHidden === "boolean") update.isHidden = patch.isHidden
   await db().conversations.update(id, update)
-
-  // notificationIcon is a Contact property
   if (patch.notificationIcon && isNotificationIcon(patch.notificationIcon)) {
     await db().contacts.update(conv.contactId, {
       notificationIcon: patch.notificationIcon,
@@ -255,11 +208,9 @@ export async function deleteConversation(id: string): Promise<void> {
     await db().messages.where("conversationId").equals(id).delete()
     await db().conversations.delete(id)
   })
-  // Also delete orphan contacts (contact with no remaining conversation)
-  // Simple approach: leave contacts; they're cheap. Could prune here if desired.
 }
 
-// ── Messages ──────────────────────────────────────────────────────────────────
+// ── Messages ───────────────────────────────────────────────────────────────────
 
 export async function addMessage(input: {
   conversationId: string
@@ -278,7 +229,6 @@ export async function addMessage(input: {
     readAt: dir === "received" ? now : null,
   }
   try {
-    // Add message first, then update conversation's lastMessageAt separately.
     await db().messages.add(msg)
     await db().conversations.update(input.conversationId, { lastMessageAt: now })
   } catch (e) {
@@ -302,7 +252,7 @@ export async function markConversationRead(conversationId: string): Promise<void
   })
 }
 
-// ── DTO mappers ───────────────────────────────────────────────────────────────
+// ── DTO mappers ────────────────────────────────────────────────────────────────
 
 async function toConversationDTO(c: ConversationRow): Promise<ConversationDTO> {
   const contact = await db().contacts.get(c.contactId)
@@ -355,7 +305,7 @@ export function toMessageDTO(m: MessageRow): MessageDTO {
   }
 }
 
-// ── Queries (used by useLiveQuery in hooks) ───────────────────────────────────
+// ── Queries ────────────────────────────────────────────────────────────────────
 
 export async function listConversations(
   scope: "public" | "vault" | "all"
@@ -383,7 +333,7 @@ export async function listMessages(conversationId: string): Promise<MessageDTO[]
   return rows.map(toMessageDTO)
 }
 
-// ── Storage stats ─────────────────────────────────────────────────────────────
+// ── Storage stats ──────────────────────────────────────────────────────────────
 
 export interface StorageStats {
   displayFolder: string
@@ -407,7 +357,6 @@ export async function getStorageStats(): Promise<StorageStats> {
   const conversations = allConversations.length
   const hidden = allConversations.filter((c) => c.isHidden).length
 
-  // Estimate storage size from IndexedDB usage if available.
   let sizeBytes = 0
   try {
     if (navigator.storage && navigator.storage.estimate) {
@@ -437,10 +386,9 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} Mo`
 }
 
-// ── Secure erase ──────────────────────────────────────────────────────────────
+// ── Secure erase ───────────────────────────────────────────────────────────────
 
 export async function secureErase(): Promise<void> {
-  // Delete message content + conversations + contacts, keep PIN/settings.
   await db().transaction("rw", db().messages, db().conversations, db().contacts, async () => {
     await db().messages.clear()
     await db().conversations.clear()
@@ -448,7 +396,7 @@ export async function secureErase(): Promise<void> {
   })
 }
 
-// ── Seed (demo data, idempotent) ──────────────────────────────────────────────
+// ── Seed (demo data, idempotent) ────────────────────────────────────────────────
 
 export async function seedDemoData(force = false): Promise<{ seeded: boolean; count: number }> {
   const existing = await db().conversations.count()
@@ -476,7 +424,6 @@ export async function seedDemoData(force = false): Promise<{ seeded: boolean; co
   const days = (n: number) => new Date(now - n * 86_400_000)
 
   let count = 0
-  // Public conversations
   const c0 = await createConversation(demoContacts[0])
   await db().conversations.update(c0.id, { isPinned: true })
   await addMessage({ conversationId: c0.id, body: "Salut ! Tu fais quoi ce soir ?", direction: "received" })
@@ -492,7 +439,6 @@ export async function seedDemoData(force = false): Promise<{ seeded: boolean; co
   await db().messages.where("conversationId").equals(c1.id).modify({ createdAt: hours(20) })
   await addMessage({ conversationId: c1.id, body: "Oui, incroyable !", direction: "sent" })
   await addMessage({ conversationId: c1.id, body: "Le but à la 89e minute 🤯", direction: "received" })
-  // keep these unread to demonstrate the discreet indicator
   await db().messages.where("conversationId").equals(c1.id).filter((m) => m.direction === "received").modify({ readAt: null })
   count++
 
@@ -525,7 +471,6 @@ export async function seedDemoData(force = false): Promise<{ seeded: boolean; co
   await db().messages.where("conversationId").equals(c6.id).modify({ createdAt: days(5) })
   count++
 
-  // Hidden conversation (vault)
   const c7 = await createConversation({ ...demoContacts[7], isHidden: true })
   await addMessage({ conversationId: c7.id, body: "On se voit où ?", direction: "received" })
   await db().messages.where("conversationId").equals(c7.id).modify({ createdAt: hours(1) })
