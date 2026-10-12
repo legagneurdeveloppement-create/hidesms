@@ -9,22 +9,10 @@
   "theme_color": "#1c1c1e",
   "icons": [
     {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
+      "src": "https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/1f5a9.png",
+      "sizes": "72x72",
       "type": "image/png",
       "purpose": "any"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
     }
   ]
 }
