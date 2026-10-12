@@ -13,11 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HideSMS — Messagerie privée",
-  description:
-    "Messagerie privée avec code PIN, coffre secret et conversations masquées. Une application web inspirée des messageries SMS privées mobiles.",
-  keywords: ["messagerie", "SMS", "privé", "secret", "PIN", "coffre", "HideSMS"],
-  authors: [{ name: "HideSMS" }],
+  title: "Calculator",
+  description: "Simple calculator app.",
+  keywords: ["calculator", "calculatrice"],
+  authors: [{ name: "Calculator" }],
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -30,14 +29,14 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "HideSMS",
+    title: "Calculator",
   },
 };
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f3ff" },
-    { media: "(prefers-color-scheme: dark)", color: "#1a1626" },
+    { media: "(prefers-color-scheme: light)", color: "#1c1c1e" },
+    { media: "(prefers-color-scheme: dark)", color: "#1c1c1e" },
   ],
   width: "device-width",
   initialScale: 1,
